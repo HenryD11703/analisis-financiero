@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import joblib # Para cargar el modelo
 
-st.set_page_config(page_title="Dashboard Financiero de AAPL", layout="wide")
+st.set_page_config(page_title="Dashboard Financiero de AAPL", layout="wide", initial_sidebar_state="expanded")
 
 @st.cache_data
 def cargar_datos():
@@ -14,39 +15,47 @@ def cargar_datos():
     df.dropna(inplace=True)
     return df
 
+@st.cache_resource
+def cargar_modelo():
+    model = joblib.load('modelo_regresion.joblib')
+    return model
+
 df = cargar_datos()
+model = cargar_modelo()
 
-st.sidebar.header("Filtros")
+st.sidebar.header("Filtros y Predicción")
 
-fecha_inicio_input = st.sidebar.date_input(
-    "Fecha de Inicio",
-    value=df.index.min().date(), # Usamos .date() para pasar un objeto 'date'
-    min_value=df.index.min().date(),
-    max_value=df.index.max().date()
-)
-
-fecha_fin_input = st.sidebar.date_input(
-    "Fecha de Fin",
-    value=df.index.max().date(), # Usamos .date() para pasar un objeto 'date'
-    min_value=df.index.min().date(),
-    max_value=df.index.max().date()
-)
+# Filtros de fecha
+fecha_inicio_input = st.sidebar.date_input("Fecha de Inicio", value=df.index.min().date(), min_value=df.index.min().date(), max_value=df.index.max().date())
+fecha_fin_input = st.sidebar.date_input("Fecha de Fin", value=df.index.max().date(), min_value=df.index.min().date(), max_value=df.index.max().date())
 
 fecha_inicio = pd.Timestamp(fecha_inicio_input).tz_localize('UTC')
 fecha_fin = pd.Timestamp(fecha_fin_input).tz_localize('UTC')
-
 
 if fecha_inicio < fecha_fin:
     df_filtrado = df.loc[fecha_inicio:fecha_fin]
 else:
     st.sidebar.error("Error: La fecha de fin debe ser posterior a la fecha de inicio.")
-    df_filtrado = df.copy() # Usamos .copy() para evitar advertencias
+    df_filtrado = df.copy()
+
+st.sidebar.subheader("Predicción con ML")
+if st.sidebar.button("Predecir Precio del Siguiente Día"):
+    features = ['Open', 'High', 'Low', 'Volume', 'SMA_50', 'SMA_200']
+    ultima_fila = df_filtrado[features].tail(1)
+
+    prediccion = model.predict(ultima_fila)
+
+    st.sidebar.success(f"Precio estimado: ${prediccion[0]:.2f}")
 
 
 st.title("Dashboard de Análisis Financiero")
+st.write(f"Desde la fecha **{fecha_inicio.strftime('%d-%m-%Y')}** hasta **{fecha_fin.strftime('%d-%m-%Y')}**")
 st.header("Análisis de la acción de Apple (AAPL)")
 st.write(f"Mostrando datos desde **{fecha_inicio.strftime('%d-%m-%Y')}** hasta **{fecha_fin.strftime('%d-%m-%Y')}**")
 st.write("---")
+
+ultimo_precio_real = df_filtrado['Close'].iloc[-1]
+st.metric(label="Último Precio de Cierre (Real)", value=f"${ultimo_precio_real:.2f}")
 
 st.subheader("Evolución del Precio y Medias Móviles")
 fig_precio = px.line(df_filtrado[['Close', 'SMA_50', 'SMA_200']],
